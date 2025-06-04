@@ -1,8 +1,8 @@
 # Technical Requirements Document (TRD)
 
 **Project Title**: Redis Clone (Subset Implementation)  
-**Author**: [Your Name]  
-**Date**: [Insert Date]  
+**Author**: Hardik Phalet  
+**Date**: 4 June 2025
 **Language**: Go (Golang)
 
 ---
