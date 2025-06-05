@@ -10,7 +10,7 @@ type Store interface {
 	Set(key string, value interface{}) error
 	Del(key string) error
 	Expire(key string, ttl time.Duration) error
-	TTL(key string) (time.Duration, error)
+	TTL(key string) (int, error)
 	Keys(pattern string) ([]string, error)
 
 	// Sorted Set operations

@@ -144,13 +144,13 @@ func (s *MemoryStore) Expire(key string, ttl time.Duration) error {
 	return nil
 }
 
-func (s *MemoryStore) TTL(key string) (time.Duration, error) {
+func (s *MemoryStore) TTL(key string) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if expiry, ok := s.expires[key]; ok {
 		if ttl := time.Until(expiry); ttl > 0 {
-			return ttl, nil
+			return int(ttl.Seconds()), nil
 		}
 		return -2, nil // -2 indicates that the key has expired
 	}
