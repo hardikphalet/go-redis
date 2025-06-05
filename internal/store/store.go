@@ -12,4 +12,8 @@ type Store interface {
 	Expire(key string, ttl time.Duration) error
 	TTL(key string) (time.Duration, error)
 	Keys(pattern string) ([]string, error)
+
+	// Sorted Set operations
+	ZAdd(key string, score float64, member string) (int, error)
+	ZRange(key string, start, stop int, withScores bool) ([]interface{}, error)
 }
