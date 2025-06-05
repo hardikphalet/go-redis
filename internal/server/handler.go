@@ -5,35 +5,42 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/hardikphalet/go-redis/internal/resp"
 	"github.com/hardikphalet/go-redis/internal/store"
 )
 
 type Handler struct {
-	conn   net.Conn
-	reader *bufio.Reader
-	writer *bufio.Writer
-	store  store.Store
+	conn       net.Conn
+	reader     *bufio.Reader
+	writer     *bufio.Writer
+	store      store.Store
+	parser     *resp.Parser
+	respWriter *resp.Writer
 }
 
 func NewHandler(conn net.Conn, store store.Store) *Handler {
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
 	return &Handler{
-		conn:   conn,
-		reader: bufio.NewReader(conn),
-		writer: bufio.NewWriter(conn),
-		store:  store,
+		conn:       conn,
+		reader:     reader,
+		writer:     writer,
+		store:      store,
+		parser:     resp.NewParser(reader),
+		respWriter: resp.NewWriter(writer),
 	}
 }
 
 func (h *Handler) Handle() error {
 	for {
-		// Read the incoming command
-		command, err := h.readCommand()
+		// Parse the incoming command using RESP protocol
+		command, err := h.parser.Parse()
 		if err != nil {
-			return fmt.Errorf("error reading command: %w", err)
+			return fmt.Errorf("error parsing command: %w", err)
 		}
 
 		// Execute the command
-		response, err := h.executeCommand(command)
+		response, err := command.Execute(h.store)
 		if err != nil {
 			if err := h.writeError(err); err != nil {
 				return fmt.Errorf("error writing error response: %w", err)
@@ -41,42 +48,17 @@ func (h *Handler) Handle() error {
 			continue
 		}
 
-		// Write the response
+		// Write the response using RESP protocol
 		if err := h.writeResponse(response); err != nil {
 			return fmt.Errorf("error writing response: %w", err)
 		}
 	}
 }
 
-func (h *Handler) readCommand() (string, error) {
-	// TODO: Implement RESP protocol parsing
-	// For now, just read a line
-	line, err := h.reader.ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-	return line[:len(line)-1], nil
-}
-
-func (h *Handler) executeCommand(command string) (interface{}, error) {
-	// TODO: Implement command parsing and execution
-	return fmt.Sprintf("Echo: %s", command), nil
-}
-
 func (h *Handler) writeResponse(response interface{}) error {
-	// TODO: Implement RESP protocol writing
-	// For now, just write the string response
-	_, err := fmt.Fprintf(h.writer, "+%v\r\n", response)
-	if err != nil {
-		return err
-	}
-	return h.writer.Flush()
+	return h.respWriter.WriteInterface(response)
 }
 
 func (h *Handler) writeError(err error) error {
-	_, writeErr := fmt.Fprintf(h.writer, "-ERR %v\r\n", err)
-	if writeErr != nil {
-		return writeErr
-	}
-	return h.writer.Flush()
+	return h.respWriter.WriteError(err)
 }
