@@ -272,6 +272,9 @@ func (p *Parser) createCommand(args []string) (commands.Command, error) {
 			WithScores: withScores,
 		}, nil
 
+	case "COMMAND":
+		return &commands.CommandCommand{}, nil
+
 	default:
 		return nil, fmt.Errorf("unknown command: %s", cmd)
 	}

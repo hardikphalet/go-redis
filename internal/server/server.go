@@ -93,8 +93,13 @@ func (s *Server) handleConnection(conn net.Conn) {
 		s.wg.Done()
 	}()
 
+	remoteAddr := conn.RemoteAddr().String()
+	log.Printf("New client connection from %s", remoteAddr)
+
 	handler := NewHandler(conn, s.store)
 	if err := handler.Handle(); err != nil {
-		log.Printf("Error handling connection: %v", err)
+		log.Printf("Error handling connection from %s: %v", remoteAddr, err)
+	} else {
+		log.Printf("Client %s disconnected", remoteAddr)
 	}
 }

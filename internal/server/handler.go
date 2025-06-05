@@ -36,6 +36,10 @@ func (h *Handler) Handle() error {
 		// Parse the incoming command using RESP protocol
 		command, err := h.parser.Parse()
 		if err != nil {
+			if err.Error() == "EOF" {
+				// Client closed connection - this is normal
+				return nil
+			}
 			return fmt.Errorf("error parsing command: %w", err)
 		}
 

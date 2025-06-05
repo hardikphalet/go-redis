@@ -3,7 +3,12 @@ package resp
 import (
 	"bufio"
 	"fmt"
+
+	"github.com/hardikphalet/go-redis/internal/types"
 )
+
+// SimpleString represents a RESP Simple String that should be written with a + prefix
+type SimpleString string
 
 type Writer struct {
 	writer *bufio.Writer
@@ -97,6 +102,41 @@ func (w *Writer) WriteArray(arr []string) error {
 	return w.writer.Flush()
 }
 
+func (w *Writer) WriteArrayInterface(arr []interface{}) error {
+	if arr == nil {
+		_, err := fmt.Fprintf(w.writer, "*-1\r\n")
+		return err
+	}
+
+	_, err := fmt.Fprintf(w.writer, "*%d\r\n", len(arr))
+	if err != nil {
+		return err
+	}
+
+	for _, v := range arr {
+		err := w.WriteInterface(v)
+		if err != nil {
+			return err
+		}
+	}
+
+	return w.writer.Flush()
+}
+
+// WriteMap writes a RESP Map as an array with alternating keys and values
+func (w *Writer) WriteMap(m map[string]interface{}) error {
+	if m == nil {
+		return w.WriteNull()
+	}
+
+	// Maps are encoded as arrays with alternating keys and values
+	arr := make([]interface{}, 0, len(m)*2)
+	for k, v := range m {
+		arr = append(arr, k, v)
+	}
+	return w.WriteArrayInterface(arr)
+}
+
 // WriteInterface writes any interface{} value in the appropriate RESP format
 func (w *Writer) WriteInterface(v interface{}) error {
 	if v == nil {
@@ -104,6 +144,8 @@ func (w *Writer) WriteInterface(v interface{}) error {
 	}
 
 	switch val := v.(type) {
+	case types.SimpleString:
+		return w.WriteString(string(val))
 	case string:
 		return w.WriteBulkString(val)
 	case []string:
@@ -115,12 +157,9 @@ func (w *Writer) WriteInterface(v interface{}) error {
 	case error:
 		return w.WriteError(val)
 	case []interface{}:
-		// Convert []interface{} to []string
-		strArr := make([]string, len(val))
-		for i, v := range val {
-			strArr[i] = fmt.Sprintf("%v", v)
-		}
-		return w.WriteArray(strArr)
+		return w.WriteArrayInterface(val)
+	case map[string]interface{}:
+		return w.WriteMap(val)
 	default:
 		// Convert anything else to string
 		return w.WriteBulkString(fmt.Sprintf("%v", v))
