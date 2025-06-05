@@ -3,7 +3,6 @@ package store
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"sync"
 	"time"
 )
@@ -16,73 +15,45 @@ type SortedSetMember struct {
 
 // SortedSet represents a Redis sorted set
 type SortedSet struct {
-	Members []SortedSetMember
+	dict map[string]float64 // For O(1) member lookups
+	sl   *skiplist          // For ordered operations
 }
 
 // Add adds or updates a member in the sorted set
 func (s *SortedSet) Add(score float64, member string) bool {
-	// Check if member exists
-	for i, m := range s.Members {
-		if m.Member == member {
-			if m.Score != score {
-				// Update score
-				s.Members[i].Score = score
-				// Re-sort the set
-				sort.Slice(s.Members, func(i, j int) bool {
-					if s.Members[i].Score == s.Members[j].Score {
-						return s.Members[i].Member < s.Members[j].Member
-					}
-					return s.Members[i].Score < s.Members[j].Score
-				})
-				return false
-			}
-			return false
-		}
+	if s.dict == nil {
+		s.dict = make(map[string]float64)
+		s.sl = newSkiplist()
 	}
 
-	// Add new member
-	s.Members = append(s.Members, SortedSetMember{Score: score, Member: member})
-	// Sort the set
-	sort.Slice(s.Members, func(i, j int) bool {
-		if s.Members[i].Score == s.Members[j].Score {
-			return s.Members[i].Member < s.Members[j].Member
-		}
-		return s.Members[i].Score < s.Members[j].Score
-	})
-	return true
+	// Check if member exists
+	oldScore, exists := s.dict[member]
+	if exists && oldScore == score {
+		return false
+	}
+
+	// Update or add to map
+	s.dict[member] = score
+
+	// Update or add to skiplist
+	return s.sl.insert(score, member)
 }
 
 // Range returns a range of members from the sorted set
 func (s *SortedSet) Range(start, stop int, withScores bool) []interface{} {
-	if s == nil || len(s.Members) == 0 {
+	if s == nil || s.sl == nil || len(s.dict) == 0 {
 		return []interface{}{}
 	}
 
-	// Handle negative indices
-	if start < 0 {
-		start = len(s.Members) + start
-	}
-	if stop < 0 {
-		stop = len(s.Members) + stop
-	}
-
-	// Boundary checks
-	if start < 0 {
-		start = 0
-	}
-	if stop >= len(s.Members) {
-		stop = len(s.Members) - 1
-	}
-	if start > stop {
-		return []interface{}{}
-	}
+	// Get range from skiplist
+	nodes := s.sl.getRange(start, stop)
 
 	// Prepare result
-	result := make([]interface{}, 0)
-	for i := start; i <= stop; i++ {
-		result = append(result, s.Members[i].Member)
+	result := make([]interface{}, 0, len(nodes)*2)
+	for _, node := range nodes {
+		result = append(result, node.member)
 		if withScores {
-			result = append(result, s.Members[i].Score)
+			result = append(result, node.score)
 		}
 	}
 
@@ -102,20 +73,38 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
+// Between reading for expiry and reading from the map, there is a race condition
+// func (s *MemoryStore) Get(key string) (interface{}, error) {
+// 	s.mu.RLock()
+// 	expired := s.isExpired(key)
+// 	s.mu.RUnlock()
+
+// 	if expired {
+// 		s.Del(key)
+// 		return nil, nil
+// 	}
+
+//		s.mu.RLock()
+//		defer s.mu.RUnlock()
+//		if val, ok := s.data[key]; ok {
+//			return val, nil
+//		}
+//		return nil, nil
+//	}
 func (s *MemoryStore) Get(key string) (interface{}, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if s.isExpired(key) {
-		s.mu.RUnlock()
-		s.Del(key)
-		s.mu.RLock()
+		delete(s.data, key)
+		delete(s.expires, key)
 		return nil, nil
 	}
 
 	if val, ok := s.data[key]; ok {
 		return val, nil
 	}
+
 	return nil, nil
 }
 
