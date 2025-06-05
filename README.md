@@ -116,3 +116,52 @@ Refer to the [Redis Command Reference](https://redis.io/commands/) for detailed 
   1. Writer and reader for RESP protocol
   2. Parsing and routing in handler
   3. adding other redis commands 
+  4. I ended up implementing a skiplist
+    - For learning what it is, the only probabilistic data structure I knew was a bloom filter
+    - Redis implements it the same way, but the later proprietary versions might have moved to ziplists idk
+
+# Tasks Remaining
+
+## Core Implementation
+1. Complete Client Implementation
+   - [ ] Create client package
+   - [ ] Implement RESP protocol encoding for client
+   - [ ] Add command-line interface
+   - [ ] Handle connection management and reconnection
+
+2. Testing
+   - [ ] Add unit tests for store package
+   - [ ] Add unit tests for commands package
+   - [ ] Add integration tests for client-server communication
+   - [ ] Add benchmarks for key operations
+
+3. Documentation
+   - [ ] Add godoc comments for all exported functions
+   - [ ] Create usage examples
+   - [ ] Document build and run instructions
+   - [ ] Add architecture diagram
+
+4. Error Handling & Edge Cases
+   - [ ] Implement proper error types
+   - [ ] Add timeout handling
+   - [ ] Handle network errors gracefully
+   - [ ] Add input validation for all commands
+
+5. Performance & Optimization
+   - [ ] Add connection pooling
+   - [ ] Optimize memory usage
+   - [ ] Add metrics collection
+   - [ ] Implement command pipelining
+
+## Nice to Have
+1. Additional Features
+   - [ ] Add PING command for health checks
+   - [ ] Add INFO command for server statistics
+   - [ ] Add MONITOR command for debugging
+   - [ ] Add basic authentication
+
+2. Development Tools
+   - [ ] Add Makefile
+   - [ ] Add Docker support
+   - [ ] Add CI/CD configuration
+   - [ ] Add development environment setup script
