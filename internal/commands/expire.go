@@ -7,8 +7,10 @@ import (
 )
 
 type ExpireCommand struct {
-	key string
-	ttl time.Duration
+	Key string
+	TTL time.Duration
 }
 
-func (c *ExpireCommand) Execute(store store.Store) (interface{}, error)
+func (c *ExpireCommand) Execute(store store.Store) (interface{}, error) {
+	return nil, store.Expire(c.Key, c.TTL)
+}
