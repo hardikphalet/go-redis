@@ -2,7 +2,7 @@
 
 **Project Title**: Redis Clone (Subset Implementation)  
 **Author**: Hardik Phalet  
-**Date**: 4 June 2025
+**Date**: 4 June 2025  
 **Language**: Go (Golang)
 
 ---
@@ -103,3 +103,16 @@ Refer to the [Redis Command Reference](https://redis.io/commands/) for detailed 
 - No backward compatibility with older Redis versions is required.
 - No need to persist data to disk – this is an **in-memory** implementation.
 - Use only standard Go packages unless a third-party package is essential.
+
+# Dev logs
+
+- Taking inspiration from the Redis, first step for me would be to implement a multi-threaded TCP server. 
+- Structure of this project is going to be simple. We have a server, handler, commands, store and a resp translation unit
+- In-memory store is easy to implement, but concurrency of writes and reads might pose an issue
+- Go provides a read-write mutex, might want to use it
+- Graceful shutdown also becomes an issue, since we are accepting requests on different goroutines
+- Go provides a WaitGroup, so will use it to implement graceful shutdown
+- Only major part that remain is: 
+  1. Writer and reader for RESP protocol
+  2. Parsing and routing in handler
+  3. adding other redis commands 
