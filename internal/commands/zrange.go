@@ -3,11 +3,12 @@ package commands
 import "github.com/hardikphalet/go-redis/internal/store"
 
 type ZRangeCommand struct {
-	key    string
-	start  int
-	stop   int
-	offset int
-	count  int
+	Key        string
+	Start      int
+	Stop       int
+	WithScores bool
 }
 
-func (c *ZRangeCommand) Execute(store store.Store) (interface{}, error)
+func (c *ZRangeCommand) Execute(store store.Store) (interface{}, error) {
+	return store.ZRange(c.Key, c.Start, c.Stop, c.WithScores)
+}
