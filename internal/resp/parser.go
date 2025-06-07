@@ -11,6 +11,7 @@ import (
 
 	"github.com/hardikphalet/go-redis/internal/commands"
 	"github.com/hardikphalet/go-redis/internal/commands/options"
+	"github.com/hardikphalet/go-redis/internal/types"
 )
 
 var (
@@ -282,24 +283,46 @@ func (p *Parser) createCommand(args []string) (commands.Command, error) {
 			return nil, fmt.Errorf("ZADD command requires at least one score-member pair")
 		}
 
-		key := args[1]
-		members := make([]commands.ScoreMember, 0, (len(args)-2)/2)
+		// Create options
+		opts := options.NewZAddOptions()
+
+		// Parse options
+		i := 1
+		for i < len(args) {
+			opt := strings.ToUpper(args[i])
+			switch opt {
+			case "NX", "XX", "GT", "LT", "CH", "INCR":
+				if err := opts.Set(opt); err != nil {
+					return nil, fmt.Errorf("invalid option: %s", err)
+				}
+				i++
+			default:
+				// If not an option, it must be the key
+				break
+			}
+		}
+
+		// Skip the key
+		i++
 
 		// Parse score-member pairs
-		for i := 2; i < len(args); i += 2 {
+		members := make([]types.ScoreMember, 0, (len(args)-i)/2)
+		for i < len(args) {
 			score, err := strconv.ParseFloat(args[i], 64)
 			if err != nil {
 				return nil, fmt.Errorf("invalid score value: %s", args[i])
 			}
-			members = append(members, commands.ScoreMember{
+			members = append(members, types.ScoreMember{
 				Score:  score,
 				Member: args[i+1],
 			})
+			i += 2
 		}
 
 		return &commands.ZAddCommand{
-			Key:     key,
+			Key:     args[1],
 			Members: members,
+			Options: opts,
 		}, nil
 
 	case "ZRANGE":

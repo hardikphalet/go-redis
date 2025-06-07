@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hardikphalet/go-redis/internal/commands/options"
+	"github.com/hardikphalet/go-redis/internal/types"
 )
 
 // SortedSetMember represents a member in a sorted set
@@ -328,7 +329,7 @@ func matchPattern(str, pattern string) bool {
 	return matched
 }
 
-func (s *MemoryStore) ZAdd(key string, score float64, member string) (int, error) {
+func (s *MemoryStore) ZAdd(key string, members []types.ScoreMember, opts *options.ZAddOptions) (interface{}, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -338,18 +339,66 @@ func (s *MemoryStore) ZAdd(key string, score float64, member string) (int, error
 		var ok bool
 		zset, ok = val.(*SortedSet)
 		if !ok {
-			return 0, fmt.Errorf("WRONGTYPE Operation against a key holding the wrong kind of value")
+			return nil, fmt.Errorf("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 	} else {
 		zset = &SortedSet{}
 		s.data[key] = zset
 	}
 
-	// Add member to sorted set
-	if zset.Add(score, member) {
-		return 1, nil // New member added
+	// Handle INCR option - only one score-member pair allowed
+	if opts != nil && opts.IsINCR() {
+		if len(members) != 1 {
+			return nil, fmt.Errorf("INCR option requires exactly one score-member pair")
+		}
+		sm := members[0]
+		oldScore, exists := zset.dict[sm.Member]
+		if !exists {
+			return nil, fmt.Errorf("element does not exist")
+		}
+		newScore := oldScore + sm.Score
+		zset.Add(newScore, sm.Member)
+		return newScore, nil
 	}
-	return 0, nil // Member updated
+
+	// Handle other options
+	changed := 0
+	for _, sm := range members {
+		oldScore, exists := zset.dict[sm.Member]
+
+		// Handle NX option - only add new elements
+		if opts != nil && opts.IsNX() && exists {
+			continue
+		}
+
+		// Handle XX option - only update existing elements
+		if opts != nil && opts.IsXX() && !exists {
+			continue
+		}
+
+		// Handle GT option - only update if new score is greater
+		if opts != nil && opts.IsGT() && exists && sm.Score <= oldScore {
+			continue
+		}
+
+		// Handle LT option - only update if new score is less
+		if opts != nil && opts.IsLT() && exists && sm.Score >= oldScore {
+			continue
+		}
+
+		// Add or update the element
+		if zset.Add(sm.Score, sm.Member) {
+			changed++
+		}
+	}
+
+	// Return number of changed elements if CH option is set
+	if opts != nil && opts.IsCH() {
+		return changed, nil
+	}
+
+	// Return number of new elements added
+	return len(members), nil
 }
 
 func (s *MemoryStore) ZRange(key string, start, stop int, withScores bool) ([]interface{}, error) {

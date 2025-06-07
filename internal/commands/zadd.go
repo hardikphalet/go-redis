@@ -1,6 +1,10 @@
 package commands
 
-import "github.com/hardikphalet/go-redis/internal/store"
+import (
+	"github.com/hardikphalet/go-redis/internal/commands/options"
+	"github.com/hardikphalet/go-redis/internal/store"
+	"github.com/hardikphalet/go-redis/internal/types"
+)
 
 // ScoreMember represents a score-member pair for sorted sets
 type ScoreMember struct {
@@ -10,17 +14,10 @@ type ScoreMember struct {
 
 type ZAddCommand struct {
 	Key     string
-	Members []ScoreMember
+	Members []types.ScoreMember
+	Options *options.ZAddOptions
 }
 
 func (c *ZAddCommand) Execute(store store.Store) (interface{}, error) {
-	added := 0
-	for _, sm := range c.Members {
-		n, err := store.ZAdd(c.Key, sm.Score, sm.Member)
-		if err != nil {
-			return nil, err
-		}
-		added += n
-	}
-	return added, nil
+	return store.ZAdd(c.Key, c.Members, c.Options)
 }

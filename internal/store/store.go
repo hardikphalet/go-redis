@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/hardikphalet/go-redis/internal/commands/options"
+	"github.com/hardikphalet/go-redis/internal/types"
 )
 
 // Store defines the interface for the Redis data store
@@ -16,6 +17,6 @@ type Store interface {
 	Keys(pattern string) ([]string, error)
 
 	// Sorted Set operations
-	ZAdd(key string, score float64, member string) (int, error)
+	ZAdd(key string, members []types.ScoreMember, opts *options.ZAddOptions) (interface{}, error)
 	ZRange(key string, start, stop int, withScores bool) ([]interface{}, error)
 }
