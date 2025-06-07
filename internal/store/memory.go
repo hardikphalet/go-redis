@@ -59,26 +59,49 @@ func (s *SortedSet) Range(start, stop int, withScores bool) []interface{} {
 }
 
 // RangeByScore returns elements with scores between min and max
-func (s *SortedSet) RangeByScore(min, max float64, rev bool) []interface{} {
+func (s *SortedSet) RangeByScore(min, max float64, rev bool, withScores bool) []interface{} {
+	if s == nil || s.sl == nil || len(s.dict) == 0 {
+		return []interface{}{}
+	}
+
 	var result []interface{}
+	current := s.sl.head
 
 	if rev {
-		// Reverse order
-		for i := len(s.scores) - 1; i >= 0; i-- {
-			score := s.scores[i]
-			if score >= min && score <= max {
-				member := s.members[i]
-				result = append(result, member)
+		// Start from the highest level and find the first node with score <= max
+		for i := s.sl.level - 1; i >= 0; i-- {
+			for current.forward[i] != nil && current.forward[i].score > max {
+				current = current.forward[i]
 			}
 		}
-	} else {
-		// Forward order
-		for i := 0; i < len(s.scores); i++ {
-			score := s.scores[i]
-			if score >= min && score <= max {
-				member := s.members[i]
-				result = append(result, member)
+		current = current.forward[0]
+
+		// Collect nodes in reverse order
+		for current != nil && current.score >= min {
+			if withScores {
+				result = append(result, current.member, current.score)
+			} else {
+				result = append(result, current.member)
 			}
+			current = current.forward[0]
+		}
+	} else {
+		// Start from the highest level and find the first node with score >= min
+		for i := s.sl.level - 1; i >= 0; i-- {
+			for current.forward[i] != nil && current.forward[i].score < min {
+				current = current.forward[i]
+			}
+		}
+		current = current.forward[0]
+
+		// Collect nodes in forward order
+		for current != nil && current.score <= max {
+			if withScores {
+				result = append(result, current.member, current.score)
+			} else {
+				result = append(result, current.member)
+			}
+			current = current.forward[0]
 		}
 	}
 
@@ -389,7 +412,10 @@ func (s *MemoryStore) ZAdd(key string, members []types.ScoreMember, opts *option
 			return nil, fmt.Errorf("WRONGTYPE Operation against a key holding the wrong kind of value")
 		}
 	} else {
-		zset = &SortedSet{}
+		zset = &SortedSet{
+			dict: make(map[string]float64),
+			sl:   newSkiplist(),
+		}
 		s.data[key] = zset
 	}
 
@@ -467,7 +493,7 @@ func (s *MemoryStore) ZRange(key string, start, stop interface{}, opts *options.
 				if !ok {
 					return nil, fmt.Errorf("invalid score range stop")
 				}
-				result = zset.RangeByScore(minScore, maxScore, opts.IsRev())
+				result = zset.RangeByScore(minScore, maxScore, opts.IsRev(), opts != nil && opts.IsWithScores())
 			} else if opts != nil && opts.IsByLex() {
 				// Convert start and stop to string for lexicographical range
 				minLex, ok := start.(string)
@@ -496,19 +522,32 @@ func (s *MemoryStore) ZRange(key string, start, stop interface{}, opts *options.
 			if opts != nil && opts.Limit.Count > 0 {
 				offset := opts.Limit.Offset
 				count := opts.Limit.Count
-				if offset >= len(result) {
+
+				// If WITHSCORES is enabled, each member takes up 2 positions
+				multiplier := 1
+				if opts.IsWithScores() {
+					multiplier = 2
+				}
+
+				// Adjust offset and count based on multiplier
+				adjustedOffset := offset * multiplier
+				adjustedCount := count * multiplier
+
+				if adjustedOffset >= len(result) {
 					return []interface{}{}, nil
 				}
-				end := offset + count
+
+				end := adjustedOffset + adjustedCount
 				if end > len(result) {
 					end = len(result)
 				}
-				result = result[offset:end]
+
+				result = result[adjustedOffset:end]
 			}
 
 			return result, nil
 		}
 		return nil, fmt.Errorf("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	return []interface{}{}, nil // Empty array for non-existent key
+	return []interface{}{}, nil
 }

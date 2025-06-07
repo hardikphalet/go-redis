@@ -288,6 +288,7 @@ func (p *Parser) createCommand(args []string) (commands.Command, error) {
 
 		// Parse options
 		i := 1
+	optionLoop:
 		for i < len(args) {
 			opt := strings.ToUpper(args[i])
 			switch opt {
@@ -298,7 +299,7 @@ func (p *Parser) createCommand(args []string) (commands.Command, error) {
 				i++
 			default:
 				// If not an option, it must be the key
-				break
+				break optionLoop
 			}
 		}
 
