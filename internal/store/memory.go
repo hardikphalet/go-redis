@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/hardikphalet/go-redis/internal/commands/options"
 )
 
 // SortedSetMember represents a member in a sorted set
@@ -126,12 +128,47 @@ func (s *MemoryStore) Del(key string) error {
 	return nil
 }
 
-func (s *MemoryStore) Expire(key string, ttl time.Duration) error {
+func (s *MemoryStore) Expire(key string, ttl time.Duration, opts *options.ExpireOptions) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, exists := s.data[key]; !exists {
 		return fmt.Errorf("key does not exist")
+	}
+
+	// Handle options
+	if opts != nil {
+		// Check if key has an existing expiry
+		hasExpiry := false
+		if expiry, ok := s.expires[key]; ok {
+			hasExpiry = !time.Now().After(expiry)
+		}
+
+		// Handle NX option - only set expiry if key has no expiry
+		if opts.IsNX() && hasExpiry {
+			return fmt.Errorf("key already has an expiry")
+		}
+
+		// Handle XX option - only set expiry if key has an existing expiry
+		if opts.IsXX() && !hasExpiry {
+			return fmt.Errorf("key has no expiry")
+		}
+
+		// Handle GT option - only set expiry if new expiry is greater than current one
+		if opts.IsGT() && hasExpiry {
+			currentTTL := time.Until(s.expires[key])
+			if ttl <= currentTTL {
+				return fmt.Errorf("new expiry is not greater than current one")
+			}
+		}
+
+		// Handle LT option - only set expiry if new expiry is less than current one
+		if opts.IsLT() && hasExpiry {
+			currentTTL := time.Until(s.expires[key])
+			if ttl >= currentTTL {
+				return fmt.Errorf("new expiry is not less than current one")
+			}
+		}
 	}
 
 	if ttl <= 0 {

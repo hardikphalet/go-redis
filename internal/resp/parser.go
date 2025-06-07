@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hardikphalet/go-redis/internal/commands"
+	"github.com/hardikphalet/go-redis/internal/commands/options"
 )
 
 var (
@@ -196,16 +197,29 @@ func (p *Parser) createCommand(args []string) (commands.Command, error) {
 		}, nil
 
 	case "EXPIRE":
-		if len(args) != 3 {
-			return nil, fmt.Errorf("EXPIRE command requires exactly 2 arguments")
+		if len(args) < 3 {
+			return nil, fmt.Errorf("EXPIRE command requires at least 2 arguments")
 		}
 		ttl, err := strconv.Atoi(args[2])
 		if err != nil {
 			return nil, fmt.Errorf("invalid TTL value")
 		}
+
+		// Create options
+		opts := options.NewExpireOptions()
+
+		// Parse options
+		for i := 3; i < len(args); i++ {
+			opt := strings.ToUpper(args[i])
+			if err := opts.Set(opt); err != nil {
+				return nil, fmt.Errorf("invalid option: %s", err)
+			}
+		}
+
 		return &commands.ExpireCommand{
-			Key: args[1],
-			TTL: time.Duration(ttl) * time.Second,
+			Key:     args[1],
+			TTL:     time.Duration(ttl) * time.Second,
+			Options: opts,
 		}, nil
 
 	case "TTL":
