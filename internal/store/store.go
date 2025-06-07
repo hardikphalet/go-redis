@@ -18,5 +18,5 @@ type Store interface {
 
 	// Sorted Set operations
 	ZAdd(key string, members []types.ScoreMember, opts *options.ZAddOptions) (interface{}, error)
-	ZRange(key string, start, stop int, withScores bool) ([]interface{}, error)
+	ZRange(key string, start, stop interface{}, opts *options.ZRangeOptions) ([]interface{}, error)
 }

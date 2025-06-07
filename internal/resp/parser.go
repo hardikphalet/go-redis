@@ -329,23 +329,82 @@ func (p *Parser) createCommand(args []string) (commands.Command, error) {
 		if len(args) < 4 {
 			return nil, fmt.Errorf("ZRANGE command requires at least 3 arguments")
 		}
-		start, err := strconv.Atoi(args[2])
-		if err != nil {
-			return nil, fmt.Errorf("invalid start index")
+
+		// Create options
+		opts := options.NewZRangeOptions()
+
+		// Parse options
+		i := 4 // Start after key, start, stop
+		for i < len(args) {
+			opt := strings.ToUpper(args[i])
+			switch opt {
+			case "BYSCORE", "BYLEX":
+				if err := opts.SetRangeType(opt); err != nil {
+					return nil, fmt.Errorf("invalid range type: %s", err)
+				}
+				i++
+			case "REV":
+				opts.Rev = true
+				i++
+			case "WITHSCORES":
+				opts.WithScores = true
+				i++
+			case "LIMIT":
+				if i+2 >= len(args) {
+					return nil, fmt.Errorf("LIMIT option requires offset and count")
+				}
+				offset, err := strconv.Atoi(args[i+1])
+				if err != nil {
+					return nil, fmt.Errorf("invalid LIMIT offset")
+				}
+				count, err := strconv.Atoi(args[i+2])
+				if err != nil {
+					return nil, fmt.Errorf("invalid LIMIT count")
+				}
+				if err := opts.SetLimit(offset, count); err != nil {
+					return nil, fmt.Errorf("invalid LIMIT parameters: %s", err)
+				}
+				i += 3
+			default:
+				return nil, fmt.Errorf("unknown option: %s", opt)
+			}
 		}
-		stop, err := strconv.Atoi(args[3])
-		if err != nil {
-			return nil, fmt.Errorf("invalid stop index")
+
+		// Parse start and stop based on range type
+		var start, stop interface{}
+		var err error
+
+		if opts.IsByScore() {
+			// For BYSCORE, start and stop are scores
+			start, err = strconv.ParseFloat(args[2], 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid score range start")
+			}
+			stop, err = strconv.ParseFloat(args[3], 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid score range stop")
+			}
+		} else if opts.IsByLex() {
+			// For BYLEX, start and stop are lexicographical strings
+			start = args[2]
+			stop = args[3]
+		} else {
+			// For index-based range, start and stop are integers
+			start, err = strconv.Atoi(args[2])
+			if err != nil {
+				return nil, fmt.Errorf("invalid start index")
+			}
+			stop, err = strconv.Atoi(args[3])
+			if err != nil {
+				return nil, fmt.Errorf("invalid stop index")
+			}
 		}
-		withScores := false
-		if len(args) > 4 && strings.ToUpper(args[4]) == "WITHSCORES" {
-			withScores = true
-		}
+
 		return &commands.ZRangeCommand{
-			Key:        args[1],
-			Start:      start,
-			Stop:       stop,
-			WithScores: withScores,
+			Key:     args[1],
+			Start:   start,
+			Stop:    stop,
+			Options: opts,
 		}, nil
 
 	case "COMMAND":

@@ -18,28 +18,23 @@ type SortedSetMember struct {
 
 // SortedSet represents a Redis sorted set
 type SortedSet struct {
-	dict map[string]float64 // For O(1) member lookups
-	sl   *skiplist          // For ordered operations
+	dict    map[string]float64 // For O(1) member lookups
+	sl      *skiplist          // For ordered operations
+	scores  []float64
+	members []string
 }
 
 // Add adds or updates a member in the sorted set
-func (s *SortedSet) Add(score float64, member string) bool {
-	if s.dict == nil {
-		s.dict = make(map[string]float64)
-		s.sl = newSkiplist()
-	}
-
-	// Check if member exists
-	oldScore, exists := s.dict[member]
-	if exists && oldScore == score {
-		return false
-	}
-
-	// Update or add to map
+func (s *SortedSet) Add(member string, score float64) {
+	// Update dictionary
 	s.dict[member] = score
 
-	// Update or add to skiplist
-	return s.sl.insert(score, member)
+	// Update skiplist
+	s.sl.insert(score, member)
+
+	// Update slices
+	s.scores = append(s.scores, score)
+	s.members = append(s.members, member)
 }
 
 // Range returns a range of members from the sorted set
@@ -57,6 +52,58 @@ func (s *SortedSet) Range(start, stop int, withScores bool) []interface{} {
 		result = append(result, node.member)
 		if withScores {
 			result = append(result, node.score)
+		}
+	}
+
+	return result
+}
+
+// RangeByScore returns elements with scores between min and max
+func (s *SortedSet) RangeByScore(min, max float64, rev bool) []interface{} {
+	var result []interface{}
+
+	if rev {
+		// Reverse order
+		for i := len(s.scores) - 1; i >= 0; i-- {
+			score := s.scores[i]
+			if score >= min && score <= max {
+				member := s.members[i]
+				result = append(result, member)
+			}
+		}
+	} else {
+		// Forward order
+		for i := 0; i < len(s.scores); i++ {
+			score := s.scores[i]
+			if score >= min && score <= max {
+				member := s.members[i]
+				result = append(result, member)
+			}
+		}
+	}
+
+	return result
+}
+
+// RangeByLex returns elements with lexicographical ordering between min and max
+func (s *SortedSet) RangeByLex(min, max string, rev bool) []interface{} {
+	var result []interface{}
+
+	if rev {
+		// Reverse order
+		for i := len(s.members) - 1; i >= 0; i-- {
+			member := s.members[i]
+			if member >= min && member <= max {
+				result = append(result, member)
+			}
+		}
+	} else {
+		// Forward order
+		for i := 0; i < len(s.members); i++ {
+			member := s.members[i]
+			if member >= min && member <= max {
+				result = append(result, member)
+			}
 		}
 	}
 
@@ -357,7 +404,7 @@ func (s *MemoryStore) ZAdd(key string, members []types.ScoreMember, opts *option
 			return nil, fmt.Errorf("element does not exist")
 		}
 		newScore := oldScore + sm.Score
-		zset.Add(newScore, sm.Member)
+		zset.Add(sm.Member, newScore)
 		return newScore, nil
 	}
 
@@ -387,9 +434,8 @@ func (s *MemoryStore) ZAdd(key string, members []types.ScoreMember, opts *option
 		}
 
 		// Add or update the element
-		if zset.Add(sm.Score, sm.Member) {
-			changed++
-		}
+		zset.Add(sm.Member, sm.Score)
+		changed++
 	}
 
 	// Return number of changed elements if CH option is set
@@ -401,14 +447,66 @@ func (s *MemoryStore) ZAdd(key string, members []types.ScoreMember, opts *option
 	return len(members), nil
 }
 
-func (s *MemoryStore) ZRange(key string, start, stop int, withScores bool) ([]interface{}, error) {
+func (s *MemoryStore) ZRange(key string, start, stop interface{}, opts *options.ZRangeOptions) ([]interface{}, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	// Check if key exists and is a sorted set
 	if val, exists := s.data[key]; exists {
 		if zset, ok := val.(*SortedSet); ok {
-			return zset.Range(start, stop, withScores), nil
+			var result []interface{}
+
+			// Handle different range types
+			if opts != nil && opts.IsByScore() {
+				// Convert start and stop to float64 for score-based range
+				minScore, ok := start.(float64)
+				if !ok {
+					return nil, fmt.Errorf("invalid score range start")
+				}
+				maxScore, ok := stop.(float64)
+				if !ok {
+					return nil, fmt.Errorf("invalid score range stop")
+				}
+				result = zset.RangeByScore(minScore, maxScore, opts.IsRev())
+			} else if opts != nil && opts.IsByLex() {
+				// Convert start and stop to string for lexicographical range
+				minLex, ok := start.(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid lex range start")
+				}
+				maxLex, ok := stop.(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid lex range stop")
+				}
+				result = zset.RangeByLex(minLex, maxLex, opts.IsRev())
+			} else {
+				// Convert start and stop to int for index-based range
+				startIdx, ok := start.(int)
+				if !ok {
+					return nil, fmt.Errorf("invalid index range start")
+				}
+				stopIdx, ok := stop.(int)
+				if !ok {
+					return nil, fmt.Errorf("invalid index range stop")
+				}
+				result = zset.Range(startIdx, stopIdx, opts != nil && opts.IsWithScores())
+			}
+
+			// Apply LIMIT if specified
+			if opts != nil && opts.Limit.Count > 0 {
+				offset := opts.Limit.Offset
+				count := opts.Limit.Count
+				if offset >= len(result) {
+					return []interface{}{}, nil
+				}
+				end := offset + count
+				if end > len(result) {
+					end = len(result)
+				}
+				result = result[offset:end]
+			}
+
+			return result, nil
 		}
 		return nil, fmt.Errorf("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
