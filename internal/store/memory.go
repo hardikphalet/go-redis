@@ -110,13 +110,56 @@ func (s *MemoryStore) Get(key string) (interface{}, error) {
 	return nil, nil
 }
 
-func (s *MemoryStore) Set(key string, value interface{}) error {
+func (s *MemoryStore) Set(key string, value interface{}, opts *options.SetOptions) (interface{}, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Check if key exists
+	exists := false
+	var oldValue interface{}
+	if val, ok := s.data[key]; ok {
+		exists = true
+		oldValue = val
+	}
+
+	// Handle NX option - only set if key doesn't exist
+	if opts != nil && opts.IsNX() && exists {
+		return nil, fmt.Errorf("key already exists")
+	}
+
+	// Handle XX option - only set if key exists
+	if opts != nil && opts.IsXX() && !exists {
+		return nil, fmt.Errorf("key does not exist")
+	}
+
+	// Store the value
 	s.data[key] = value
-	delete(s.expires, key) // Reset expiration on SET
-	return nil
+
+	// Handle expiry
+	if opts != nil {
+		if opts.IsKEEPTTL() {
+			// Keep existing TTL if any
+			if _, ok := s.expires[key]; !ok {
+				delete(s.expires, key)
+			}
+		} else if opts.ExpiryType != "" {
+			// Set new expiry
+			s.expires[key] = opts.ExpiryTime
+		} else {
+			// No expiry specified, remove any existing expiry
+			delete(s.expires, key)
+		}
+	} else {
+		// No options specified, remove any existing expiry
+		delete(s.expires, key)
+	}
+
+	// Return old value if GET option is set
+	if opts != nil && opts.IsGET() {
+		return oldValue, nil
+	}
+
+	return nil, nil
 }
 
 func (s *MemoryStore) Del(key string) error {

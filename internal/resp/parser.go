@@ -172,12 +172,51 @@ func (p *Parser) createCommand(args []string) (commands.Command, error) {
 
 	switch cmd {
 	case "SET":
-		if len(args) != 3 {
-			return nil, fmt.Errorf("SET command requires exactly 2 arguments")
+		if len(args) < 3 {
+			return nil, fmt.Errorf("SET command requires at least 2 arguments")
 		}
+
+		// Create options
+		opts := options.NewSetOptions()
+
+		// Parse options
+		i := 3
+		for i < len(args) {
+			opt := strings.ToUpper(args[i])
+			switch opt {
+			case "NX", "XX", "GET":
+				if err := opts.Set(opt); err != nil {
+					return nil, fmt.Errorf("invalid option: %s", err)
+				}
+				i++
+			case "EX", "PX", "EXAT", "PXAT", "KEEPTTL":
+				if opt == "KEEPTTL" {
+					if err := opts.SetExpiry(opt, 0); err != nil {
+						return nil, fmt.Errorf("invalid option: %s", err)
+					}
+					i++
+				} else {
+					if i+1 >= len(args) {
+						return nil, fmt.Errorf("missing value for %s option", opt)
+					}
+					value, err := strconv.ParseInt(args[i+1], 10, 64)
+					if err != nil {
+						return nil, fmt.Errorf("invalid value for %s option", opt)
+					}
+					if err := opts.SetExpiry(opt, value); err != nil {
+						return nil, fmt.Errorf("invalid option: %s", err)
+					}
+					i += 2
+				}
+			default:
+				return nil, fmt.Errorf("unknown option: %s", opt)
+			}
+		}
+
 		return &commands.SetCommand{
-			Key:   args[1],
-			Value: args[2],
+			Key:     args[1],
+			Value:   args[2],
+			Options: opts,
 		}, nil
 
 	case "GET":
